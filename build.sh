@@ -2,26 +2,27 @@
 
 echo
 echo "--------------------------------------"
-echo "      Evolution X 13.0 Buildbot       "
+echo "        AwakenOS 14.0 Buildbot        "
 echo "                  by                  "
-echo "                ponces                "
+echo "                YZBruh                "
+echo "        original author: ponces       "
 echo "--------------------------------------"
 echo
 
 set -e
 
-BL=$PWD/treble_build_evo
-BD=$HOME/builds
+BL=$PWD/treble_build_awaken
+BD=$PWD/treble_build_awaken/GSI_images
 
 initRepos() {
     if [ ! -d .repo ]; then
         echo "--> Initializing workspace"
-        repo init -u https://github.com/Evolution-X/manifest -b tiramisu
+        repo init -u https://github.com/Project-Awaken/android_manifest -b ursa
         echo
 
         echo "--> Preparing local manifest"
         mkdir -p .repo/local_manifests
-        cp $BL/manifest.xml .repo/local_manifests/evo.xml
+        cp $BL/manifest.xml .repo/local_manifests/awaken.xml
         echo
     fi
 }
@@ -47,8 +48,8 @@ applyPatches() {
 
     echo "--> Generating makefiles"
     cd device/phh/treble
-    cp $BL/evo.mk .
-    bash generate.sh evo
+    cp $BL/awaken.mk .
+    bash generate.sh awaken
     cd ../../..
     echo
 }
@@ -69,7 +70,7 @@ buildTrebleApp() {
     echo
 }
 
-buildVariant() {
+buildVariantARMplus() {
     echo "--> Building treble_arm64_bvN"
     lunch treble_arm64_bvN-userdebug
     make -j$(nproc --all) installclean
@@ -78,29 +79,30 @@ buildVariant() {
     echo
 }
 
-buildMiniVariant() {
-    echo "--> Building treble_arm64_bvN-mini"
-    (cd vendor/evolution && git am $BL/patches/mini.patch)
-    make -j$(nproc --all) systemimage
-    (cd vendor/evolution && git reset --hard HEAD~1)
-    mv $OUT/system.img $BD/system-treble_arm64_bvN-mini.img
+buildVndkliteVariantplus() {
+    echo "--> Building treble_arm64_bvN-vndklite"
+    cd sas-creator
+    sudo bash lite-adapter.sh 64 $BD/system-treble_arm64_bvimg
+    cp s.img $BD/system-treble_arm64_bvN-vndklite.img
+    sudo rm -rf s.img d tmp
+    cd ..
     echo
 }
 
-buildPicoVariant() {
-    echo "--> Building treble_arm64_bvN-pico"
-    (cd vendor/evolution && git am $BL/patches/pico.patch)
+buildVariantARM() {
+    echo "--> Building treble_a64_bvN"
+    lunch treble_a64_bvN-userdebug
+    make -j$(nproc --all) installclean
     make -j$(nproc --all) systemimage
-    (cd vendor/evolution && git reset --hard HEAD~1)
-    mv $OUT/system.img $BD/system-treble_arm64_bvN-pico.img
+    mv $OUT/system.img $BD/system-treble_a64_bvN.img
     echo
 }
 
 buildVndkliteVariant() {
-    echo "--> Building treble_arm64_bvN-vndklite"
+    echo "--> Building treble_a64_bvN-vndklite"
     cd sas-creator
-    sudo bash lite-adapter.sh 64 $BD/system-treble_arm64_bvN.img
-    cp s.img $BD/system-treble_arm64_bvN-vndklite.img
+    sudo bash lite-adapter.sh 32 $BD/system-treble_a64_bvimg
+    cp s.img $BD/system-treble_a64_bvN-vndklite.img
     sudo rm -rf s.img d tmp
     cd ..
     echo
@@ -109,38 +111,11 @@ buildVndkliteVariant() {
 generatePackages() {
     echo "--> Generating packages"
     buildDate="$(date +%Y%m%d)"
-    xz -cv $BD/system-treble_arm64_bvN.img -T0 > $BD/evolution_arm64-ab-7.9.7-unofficial-$buildDate.img.xz
-    xz -cv $BD/system-treble_arm64_bvN-vndklite.img -T0 > $BD/evolution_arm64-ab-vndklite-7.9.7-unofficial-$buildDate.img.xz
-    xz -cv $BD/system-treble_arm64_bvN-mini.img -T0 > $BD/evolution_arm64-ab-mini-7.9.7-unofficial-$buildDate.img.xz
-    xz -cv $BD/system-treble_arm64_bvN-pico.img -T0 > $BD/evolution_arm64-ab-pico-7.9.7-unofficial-$buildDate.img.xz
+    xz -cv $BD/system-treble_arm64_bvN.img -T0 > $BD/awaken_arm64-ab-ursa-unofficial-$buildDate.img.xz
+    xz -cv $BD/system-treble_arm64_bvN-vndklite.img -T0 > $BD/awaken_arm64-ab-vndklite-ursa-unofficial-$buildDate.img.xz
+    xz -cv $BD/system-treble_a64_bvN.img -T0 > $BD/awaken_a64-ab-ursa-unofficial-$buildDate.img.xz
+    xz -cv $BD/system-treble_a64_bvN-vndklite.img -T0 > $BD/awaken_a64-ab-vndklite-ursa-unofficial-$buildDate.img.xz
     rm -rf $BD/system-*.img
-    echo
-}
-
-generateOta() {
-    echo "--> Generating OTA file"
-    version="$(date +v%Y.%m.%d)"
-    timestamp="$START"
-    json="{\"version\": \"$version\",\"date\": \"$timestamp\",\"variants\": ["
-    find $BD/ -name "evolution_*" | sort | {
-        while read file; do
-            filename="$(basename $file)"
-            if [[ $filename == *"vndklite"* ]]; then
-                name="treble_arm64_bvN-vndklite"
-            elif [[ $filename == *"mini"* ]]; then
-                name="treble_arm64_bvN-mini"
-            elif [[ $filename == *"pico"* ]]; then
-                name="treble_arm64_bvN-pico"
-            else
-                name="treble_arm64_bvN"
-            fi
-            size=$(wc -c $file | awk '{print $1}')
-            url="https://github.com/ponces/treble_build_evo/releases/download/$version/$filename"
-            json="${json} {\"name\": \"$name\",\"size\": \"$size\",\"url\": \"$url\"},"
-        done
-        json="${json%?}]}"
-        echo "$json" | jq . > $BL/ota.json
-    }
     echo
 }
 
@@ -151,12 +126,11 @@ syncRepos
 applyPatches
 setupEnv
 buildTrebleApp
-buildVariant
-buildMiniVariant
-buildPicoVariant
+buildVariantARMplus
+buildVndkliteVariantplus
+buildVariantARM
 buildVndkliteVariant
 generatePackages
-generateOta
 
 END=$(date +%s)
 ELAPSEDM=$(($(($END-$START))/60))
